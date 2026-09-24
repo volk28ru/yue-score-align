@@ -104,16 +104,7 @@ async function build() {
   const data = await res.json();
   unit = frac(data.unit); blocks = data.blocks; vocalId = data.vocal_id;
   origBlocks = JSON.parse(JSON.stringify(blocks));
-  flat = [];
-  let prevTie = false;
-  for (const it of vocalStream()) {
-    if (it.type !== "ev") continue;
-    const ev = it.ev;
-    if (ev.kind !== "note") { prevTie = false; continue; }
-    if (!prevTie && ev.syllable != null) flat.push(ev.syllable);
-    prevTie = ev.tie;
-  }
-  flat = flat.concat(data.leftover || []);
+  flat = mergeConsonants(Array.isArray(data.syllables) ? data.syllables : collectFlat());
   selected = null;
   rewalk(); render();
 }
@@ -321,15 +312,38 @@ function rebarredBlocks() {
   }
   return copy;
 }
-async function exportAbc() {
+function filteredScoreText(keepVoice) {
+  const lines = ($("score").value || "").split("\n");
+  const out = [];
+  for (const ln of lines) {
+    const m = /^V:\s*(\S+)/.exec(ln);
+    if (m && m[1] !== keepVoice) continue;
+    out.push(ln);
+  }
+  return out.join("\n");
+}
+async function exportAbc(mode) {
+  let blocksOut = rebarredBlocks();
+  let scoreText = $("score").value;
+  if (mode === "vocal") {
+    blocksOut = blocksOut.filter((b) => b.voice === vocalId);
+    scoreText = filteredScoreText(vocalId);
+  } else if (mode === "ins") {
+    const insId = (blocks.find((b) => b.voice !== vocalId) || {}).voice;
+    if (!insId) return;
+    blocksOut = blocksOut.filter((b) => b.voice === insId);
+    scoreText = filteredScoreText(insId);
+  }
   const res = await fetch("/api/export", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ score: $("score").value, blocks: rebarredBlocks() }) });
+    body: JSON.stringify({ score: scoreText, blocks: blocksOut }) });
   const data = await res.json();
   $("out").value = data.abc;
 }
 document.querySelectorAll("#toolbar button").forEach(b => { b.onclick = () => act(b.dataset.act); });
 $("build").onclick = build;
-$("export").onclick = exportAbc;
+$("export").onclick = () => exportAbc("full");
+$("exportVocal").onclick = () => exportAbc("vocal");
+$("exportIns").onclick = () => exportAbc("ins");
 $("copy").onclick = () => navigator.clipboard.writeText($("out").value);
 $("save").onclick = () => {
   const blob = new Blob([$("out").value], { type: "text/plain;charset=utf-8" });
@@ -355,8 +369,9 @@ window.addEventListener("error", (e) => {
   const d = document.getElementById("diag");
   if (d) d.textContent = "ОШИБКА: " + e.message + " (строка " + e.lineno + ")";
 });
-// --- Аудио-предпросмотр (Web Audio API) ---
-let audioCtx = null, playNodes = [], playRAF = null, playStart = 0, playSecPerStep = 0, playTotalSteps = 0;
+// --- Аудио-предпросмотр (Web Audio API), v2: раздельное управление картами ---
+let audioCtx = null, playNodes = [], playRAF = null, playStart = 0;
+let playSecPerStep = 0, playFromStep = 0, playToStep = 0, startMarker = 0;
 function tempoSecPerStep() {
   const m = /Q:\s*([0-9]+)\/([0-9]+)\s*=\s*([0-9]+)/.exec($("score").value || "");
   if (m) {
@@ -366,12 +381,12 @@ function tempoSecPerStep() {
   return (60 / 105) / fval(fdiv(frac("1/4"), unit));
 }
 function midiFreq(p) { return 440 * Math.pow(2, (p - 69) / 12); }
-function collectVoiceSchedule(vid) {
+function collectVoiceScheduleFrom(src, vid) {
   const items = [];
   let cursor = 0, spB = meterSteps(headerMeter());
-  for (const it of streamFrom(blocks, vid)) {
+  for (const it of streamFrom(src, vid)) {
     if (it.type === "section") {
-      const b = blocks[it.bi];
+      const b = src[it.bi];
       for (const ln of (b.inline || [])) {
         const mm = /^M:\s*([0-9]+\/[0-9]+)/.exec(ln);
         if (mm) spB = meterSteps(mm[1]);
@@ -393,27 +408,45 @@ function collectVoiceSchedule(vid) {
   }
   return { notes: merged, total: cursor };
 }
-function playSchedule(mode) {
+function drawMarkers() {
+  ["timeline", "timeline-orig"].forEach((id) => {
+    const tl = document.getElementById(id);
+    if (!tl) return;
+    let m = tl.querySelector(".tl-startmark");
+    if (!m) { m = document.createElement("div"); m.className = "tl-startmark"; tl.appendChild(m); }
+    m.style.left = (startMarker * STEP_PX) + "px";
+    m.style.display = startMarker > 0 ? "block" : "none";
+  });
+}
+function setStartMarker(step) {
+  startMarker = Math.max(0, Math.floor(step));
+  drawMarkers();
+}
+function playSchedule(src, mode) {
   stopPlay();
-  if (!blocks.length || !unit) return;
+  if (!src || !src.length || !unit) return;
   audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === "suspended") audioCtx.resume();
   const secPerStep = tempoSecPerStep();
   const t0 = audioCtx.currentTime + 0.1;
   playSecPerStep = secPerStep;
-  const insId = (blocks.find((b) => b.voice !== vocalId) || {}).voice || null;
+  const insId = (src.find((b) => b.voice !== vocalId) || {}).voice || null;
   const tracks = mode === "both" && insId ? [vocalId, insId] : [vocalId];
   let total = 0;
   tracks.forEach((vid) => {
-    const sch = collectVoiceSchedule(vid);
+    const sch = collectVoiceScheduleFrom(src, vid);
     total = Math.max(total, sch.total);
     sch.notes.forEach((n) => {
+      const end = n.start + n.dur;
+      if (end <= startMarker) return;
+      const stStep = Math.max(n.start, startMarker);
+      const durSteps = end - stStep;
       const osc = audioCtx.createOscillator();
       const g = audioCtx.createGain();
       osc.type = vid === vocalId ? "triangle" : "sawtooth";
       osc.frequency.value = midiFreq(n.pitch);
-      const st = t0 + n.start * secPerStep;
-      const du = Math.max(0.06, n.dur * secPerStep - 0.02);
+      const st = t0 + (stStep - startMarker) * secPerStep;
+      const du = Math.max(0.06, durSteps * secPerStep - 0.02);
       const vol = vid === vocalId ? 0.22 : 0.09;
       g.gain.setValueAtTime(0.0001, st);
       g.gain.linearRampToValueAtTime(vol, st + 0.015);
@@ -424,20 +457,26 @@ function playSchedule(mode) {
       playNodes.push(osc);
     });
   });
-  playTotalSteps = total;
+  playToStep = total;
+  playFromStep = startMarker;
   playStart = t0;
-  const ph1 = document.createElement("div");
-  ph1.className = "tl-playhead"; ph1.id = "ph-edit";
-  $("timeline").appendChild(ph1);
-  const ph2 = document.createElement("div");
-  ph2.className = "tl-playhead"; ph2.id = "ph-orig";
-  $("timeline-orig").appendChild(ph2);
+  ["timeline", "timeline-orig"].forEach((id) => {
+    const tl = document.getElementById(id);
+    if (!tl) return;
+    const ph = document.createElement("div");
+    ph.className = "tl-playhead";
+    ph.id = id === "timeline" ? "ph-edit" : "ph-orig";
+    ph.style.left = (startMarker * STEP_PX) + "px";
+    tl.appendChild(ph);
+  });
   const tick = () => {
-    const steps = (audioCtx.currentTime - playStart) / playSecPerStep;
-    if (steps >= playTotalSteps) { stopPlay(); return; }
-    const x = Math.max(0, steps * STEP_PX);
-    ph1.style.left = x + "px";
-    ph2.style.left = x + "px";
+    const steps = playFromStep + (audioCtx.currentTime - playStart) / playSecPerStep;
+    if (steps >= playToStep) { stopPlay(); return; }
+    const x = steps * STEP_PX;
+    const p1 = document.getElementById("ph-edit");
+    const p2 = document.getElementById("ph-orig");
+    if (p1) p1.style.left = x + "px";
+    if (p2) p2.style.left = x + "px";
     const wrap = $("timeline").parentElement;
     if (x > wrap.scrollLeft + wrap.clientWidth - 80) wrap.scrollLeft = Math.max(0, x - wrap.clientWidth / 2);
     playRAF = requestAnimationFrame(tick);
@@ -450,10 +489,43 @@ function stopPlay() {
   playNodes = [];
   ["ph-edit", "ph-orig"].forEach((id) => { const e = document.getElementById(id); if (e) e.remove(); });
 }
-$("playVocal").onclick = () => playSchedule("vocal");
-$("playBoth").onclick = () => playSchedule("both");
-$("stopPlay").onclick = stopPlay;
+function wireRulerClick(tlId) {
+  const tl = $(tlId);
+  tl.addEventListener("click", (e) => {
+    if (!e.target.closest(".tl-ruler")) return;
+    const rect = tl.getBoundingClientRect();
+    setStartMarker((e.clientX - rect.left) / STEP_PX);
+  });
+  tl.addEventListener("dblclick", (e) => {
+    if (e.target.closest(".tl-ruler")) setStartMarker(0);
+  });
+}
+wireRulerClick("timeline");
+wireRulerClick("timeline-orig");
+const _baseRender = render;
+render = function () { _baseRender(); drawMarkers(); };
+$("playOrigVocal").onclick = () => playSchedule(origBlocks, "vocal");
+$("playOrigBoth").onclick = () => playSchedule(origBlocks, "both");
+$("playEditVocal").onclick = () => playSchedule(blocks, "vocal");
+$("playEditBoth").onclick = () => playSchedule(blocks, "both");
+$("stopOrig").onclick = stopPlay;
+$("stopEdit").onclick = stopPlay;
 // --- Сессии редактирования (JSON) ---
+function hasVowel(s) { return /[аеёиоуыэюяaeiouy]/i.test(s); }
+function mergeConsonants(list) {
+  const out = [];
+  let pending = "";
+  for (const s of list) {
+    if (!hasVowel(s)) { pending += s; continue; }
+    out.push(pending + s);
+    pending = "";
+  }
+  if (pending) {
+    if (out.length) out[out.length - 1] += pending;
+    else out.push(pending);
+  }
+  return out;
+}
 function collectFlat() {
   const f = [];
   let prevTie = false;

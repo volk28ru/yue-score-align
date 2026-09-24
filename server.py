@@ -105,6 +105,7 @@ class Handler(BaseHTTPRequestHandler):
                 "vocal_id": vid,
                 "blocks": blocks_json,
                 "leftover": al.leftover_syllables,
+                "syllables": [r.syllable for r in al.rows],
                 "notes_without_syllable": al.notes_without_syllable,
                 "sections": score.section_order,
             })

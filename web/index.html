@@ -31,9 +31,7 @@
   </section>
   <div class="row">
     <button id="build">Построить таймлайн</button>
-    <button id="playVocal">▶ Вокал</button>
-    <button id="playBoth">▶ Вокал+Ins</button>
-    <button id="stopPlay">■ Стоп</button>
+    <span class="hint">Клик по линейке тактов — точка старта воспроизведения; двойной клик — с начала.</span>
   </div>
   <div id="toolbar" class="row">
     <button data-act="semdn">− полутон</button>
@@ -46,14 +44,26 @@
     <button data-act="del">удалить</button>
   </div>
   <div id="diag"></div>
-  <div class="tl-caption">Исходная карта (просмотр)</div>
+  <div class="row tl-caprow">
+    <span class="tl-caption">Исходная карта (просмотр)</span>
+    <button id="playOrigVocal">▶ Вокал</button>
+    <button id="playOrigBoth">▶ Обе дорожки</button>
+    <button id="stopOrig">■</button>
+  </div>
   <div class="timeline-wrap orig-wrap"><div id="timeline-orig"></div></div>
-  <div class="tl-caption">Редактируемая карта</div>
+  <div class="row tl-caprow">
+    <span class="tl-caption">Редактируемая карта</span>
+    <button id="playEditVocal">▶ Вокал</button>
+    <button id="playEditBoth">▶ Обе дорожки</button>
+    <button id="stopEdit">■</button>
+  </div>
   <div class="timeline-wrap"><div id="timeline"></div></div>
   <section class="out-section">
     <div class="row out-head">
       <label for="out">Готовая ABC-строка для YuE2</label>
       <button id="export" class="primary">Экспорт ABC</button>
+      <button id="exportVocal" class="primary alt" title="Только вокальная партия">Экспорт Vocal</button>
+      <button id="exportIns" class="primary alt" title="Только инструментальная партия">Экспорт Ins</button>
       <button id="copy">Копировать</button>
       <button id="save">Сохранить .abc</button>
       <button id="saveSession">Сохранить сессию</button>

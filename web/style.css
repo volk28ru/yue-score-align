@@ -57,3 +57,10 @@ button.primary {
 }
 button.primary:hover { background: #37815c; }
 .tl-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5470; z-index: 5; pointer-events: none; }
+.tl-caprow { align-items: center; gap: 8px; }
+.tl-caprow .tl-caption { margin-right: 4px; }
+.hint { color: #9aa0a6; font-size: 11px; }
+.tl-startmark { position: absolute; top: 0; bottom: 0; width: 2px; background: #4faf7f; z-index: 4; pointer-events: none; }
+.tl-ruler, .tl-tick { cursor: pointer; }
+button.primary.alt { background: #3a4a63; border-color: #5a7aa3; box-shadow: 0 0 10px rgba(58, 74, 99, .55); }
+button.primary.alt:hover { background: #465a7a; }
