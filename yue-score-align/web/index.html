@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>yue-score-align — редактор партитуры YuE2</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>yue-score-align</h1>
+  <span>таймлайн вокальной линии для YuE2</span>
+</header>
+<main>
+  <section class="inputs">
+    <div class="col">
+      <div class="row">
+        <button id="impabc">Импорт ABC из файла</button>
+        <input type="file" id="fileabc" accept=".abc,.txt" hidden>
+      </div>
+      <label for="score">Score (ABC)</label>
+      <textarea id="score" spellcheck="false"></textarea>
+    </div>
+    <div class="col">
+      <div class="row">
+        <button id="implyr">Импорт текста из файла</button>
+        <input type="file" id="filelyr" accept=".txt,.text" hidden>
+      </div>
+      <label for="lyrics">Lyrics</label>
+      <textarea id="lyrics" spellcheck="false"></textarea>
+    </div>
+  </section>
+  <div class="row">
+    <button id="build">Построить таймлайн</button>
+    <span class="hint">Клик по линейке тактов — точка старта воспроизведения; двойной клик — с начала.</span>
+  </div>
+  <div id="toolbar" class="row">
+    <button data-act="semdn">− полутон</button>
+    <button data-act="semup">+ полутон</button>
+    <button data-act="durdn">− длит.</button>
+    <button data-act="durup">+ длит.</button>
+    <button data-act="tie">связь ~</button>
+    <button data-act="addnote">+ нота</button>
+    <button data-act="addrest">+ пауза</button>
+    <button data-act="del">удалить</button>
+  </div>
+  <div id="diag"></div>
+  <div class="row tl-caprow">
+    <span class="tl-caption">Исходная карта (просмотр)</span>
+    <button id="playOrigVocal">▶ Вокал</button>
+    <button id="playOrigBoth">▶ Обе дорожки</button>
+    <button id="stopOrig">■</button>
+  </div>
+  <div class="timeline-wrap orig-wrap"><div id="timeline-orig"></div></div>
+  <div class="row tl-caprow">
+    <span class="tl-caption">Редактируемая карта</span>
+    <button id="playEditVocal">▶ Вокал</button>
+    <button id="playEditBoth">▶ Обе дорожки</button>
+    <button id="stopEdit">■</button>
+  </div>
+  <div class="timeline-wrap"><div id="timeline"></div></div>
+  <section class="out-section">
+    <div class="row out-head">
+      <label for="out">Готовая ABC-строка для YuE2</label>
+      <button id="export" class="primary">Экспорт ABC</button>
+      <button id="exportVocal" class="primary alt" title="Только вокальная партия">Экспорт Vocal</button>
+      <button id="exportIns" class="primary alt" title="Только инструментальная партия">Экспорт Ins</button>
+      <button id="copy">Копировать</button>
+      <button id="save">Сохранить .abc</button>
+      <button id="saveSession">Сохранить сессию</button>
+      <button id="loadSession">Загрузить сессию</button>
+      <input type="file" id="fileSession" accept=".json" hidden>
+    </div>
+    <textarea id="out" spellcheck="false"></textarea>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
